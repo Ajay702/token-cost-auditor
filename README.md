@@ -11,6 +11,7 @@ python3 auditor.py --demo                           # sample data, no keys neede
 python3 auditor.py --logs path/to/usage.jsonl       # your own logs
 python3 auditor.py --logs path/to/usage.jsonl --llm # plus a Claude-written briefing
 python3 -m unittest discover -s tests               # run tests
+python3 benchmarks/bench.py                         # benchmarks (about 10 s)
 ```
 
 Each log line is one API call. You can use the Anthropic response shape or flat fields:
@@ -48,6 +49,29 @@ flowchart TD
     H -- no --> J[Save output/cost_report.md]
     I --> J
 ```
+
+## Benchmarks
+
+`python3 benchmarks/bench.py` uses the standard library only and needs no API key. Measured on an Apple M4 laptop with Python 3.14:
+
+| Test | Result |
+|---|---|
+| **Speed**: 1,000,000 calls (228 MB JSONL) | **5.9 s end to end**, about **170,000 calls/s**. Peak memory 1.3 GB |
+| **Speed**: 200,000 calls (46 MB) | 1.2 s, peak memory 285 MB |
+| **Cost math**: 4,035 groups, $29,553 total | **Exact.** Every group total matches an independent re-computation to the cent ($0.00 difference) |
+| **Grouping without `template_id`**: 20,000 calls from 8 known templates | **75%** of calls grouped exactly right. See below |
+| **"Turn on caching" savings estimate** vs. the real saving after caching | Accurate (0% error) when 80% of the prompt is a fixed prefix. **+60% too high** when only 50% is fixed, **16% too low** when 95% is fixed |
+
+**Grouping, template by template.** When the variable part of a prompt is a number, email, URL, UUID or quoted text, grouping is perfect (6 of 8 templates: 1 group each, 100% of calls). It breaks down in two cases:
+
+- **Unquoted names** (`Write a welcome email to Priya…`): split into 8 groups, one per name.
+- **Free text at the start of the prompt** (`refund login error? Answer the customer's question…`): split into 1,137 groups.
+
+No two different templates were ever merged into one group. **If your logs have a `template_id`, send it: grouping is then exact.**
+
+**The savings estimate assumes 80% of the uncached input can be cached.** Treat it as a rough figure. If you know how big your fixed prefix (system prompt, tool definitions, docs) is compared to the whole prompt, scale the estimate accordingly.
+
+**Memory:** the whole log is loaded into memory, at about 1.3 KB per call. For logs much larger than a few million calls, split them by day or week.
 
 ## Configuration
 
